@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: gqa_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gqa
+      POSTGRES_PASSWORD: gqa_pass
+      POSTGRES_DB: gqa_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - gqa_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gqa -d gqa_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gqa_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: sh -c "npx prisma generate --schema=prisma/schema.prisma && npx prisma migrate deploy --schema=prisma/schema.prisma && npm run start:dev"
+
+
+
+    
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gqa_frontend
+    restart: unless-stopped
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: sh -c "npm run dev -- --host 0.0.0.0 --port 5173"
+
+volumes:
+  gqa_pgdata:

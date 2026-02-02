@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StudyStatus {
+  DRAFT
+  ACTIVE
+}
+
+enum FieldType {
+  TEXT
+  NUMBER
+  DATE
+}
+
+model Study {
+  id           String       @id @default(cuid())
+  name         String
+  protocolCode String       @unique
+  status       StudyStatus  @default(DRAFT)
+
+  visitTemplates VisitTemplate[]
+  formTemplates  FormTemplate[]
+  subjects       Subject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+model VisitTemplate {
+  id           String @id @default(cuid())
+  studyId      String
+  name         String
+  code         String // unique within study
+  day          Int
+  windowBefore Int @default(0)
+  windowAfter  Int @default(0)
+
+  study Study @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  attachedForms VisitTemplateForm[]
+  scheduledVisits ScheduledVisit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studyId, code])
+  @@index([studyId, day])
+}
+
+model FormTemplate {
+  id      String @id @default(cuid())
+  studyId String
+  name    String
+  code    String // unique within study
+
+  study  Study @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  fields FormField[]
+
+  attachedTo VisitTemplateForm[]
+  submissions FormSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studyId, code])
+  @@index([studyId])
+}
+
+model FormField {
+  id             String   @id @default(cuid())
+  formTemplateId String
+  label          String
+  key            String   // unique within form
+  type           FieldType
+  required       Boolean  @default(false)
+  order          Int      @default(0)
+
+  formTemplate FormTemplate @relation(fields: [formTemplateId], references: [id], onDelete: Cascade)
+  values       FormSubmissionFieldValue[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([formTemplateId, key])
+  @@index([formTemplateId, order])
+}
+
+model VisitTemplateForm {
+  id             String @id @default(cuid())
+  visitTemplateId String
+  formTemplateId  String
+
+  visitTemplate VisitTemplate @relation(fields: [visitTemplateId], references: [id], onDelete: Cascade)
+  formTemplate  FormTemplate  @relation(fields: [formTemplateId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([visitTemplateId, formTemplateId])
+  @@index([formTemplateId])
+}
+
+model Subject {
+  id             String   @id @default(cuid())
+  studyId        String
+  subjectCode    String   // unique within study
+  enrollmentDate DateTime
+
+  study Study @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  scheduledVisits ScheduledVisit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studyId, subjectCode])
+  @@index([studyId, enrollmentDate])
+}
+
+model ScheduledVisit {
+  id            String   @id @default(cuid())
+  subjectId     String
+  visitTemplateId String
+  scheduledDate DateTime
+  status        String   @default("SCHEDULED") // basit bırakalım (isteğe göre enum yapılır)
+
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  visitTemplate VisitTemplate @relation(fields: [visitTemplateId], references: [id], onDelete: Restrict)
+
+  submissions FormSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([subjectId, visitTemplateId]) // aynı template aynı subject için 1 kez
+  @@index([subjectId, scheduledDate])
+}
+
+model FormSubmission {
+  id              String   @id @default(cuid())
+  scheduledVisitId String
+  formTemplateId   String
+
+  submittedAt DateTime @default(now())
+
+  scheduledVisit ScheduledVisit @relation(fields: [scheduledVisitId], references: [id], onDelete: Cascade)
+  formTemplate  FormTemplate  @relation(fields: [formTemplateId], references: [id], onDelete: Restrict)
+
+  values FormSubmissionFieldValue[]
+
+  @@unique([scheduledVisitId, formTemplateId]) // aynı visit + form için tek submission
+  @@index([formTemplateId])
+}
+
+model FormSubmissionFieldValue {
+  id             String @id @default(cuid())
+  submissionId   String
+  formFieldId    String
+  valueText      String? // TEXT
+  valueNumber    Float?  // NUMBER
+  valueDate      DateTime? // DATE
+
+  submission FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  formField  FormField     @relation(fields: [formFieldId], references: [id], onDelete: Restrict)
+
+  @@unique([submissionId, formFieldId]) // her field için 1 değer
+  @@index([formFieldId])
+}
